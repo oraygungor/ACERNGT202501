@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Natural Gas Trading Dashboard (Hub Shares & Summary Fix v2)</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f6f9; color: #333; }
+        header { background-color: #005a9e; color: white; padding: 20px 25px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        header h1 { margin: 0; font-size: 2.2em; font-weight: 600; }
+        .dashboard-container { padding: 20px; max-width: 1800px; margin: auto; }
+        .controls-section {
+            background-color: white; padding: 15px 20px; margin-bottom: 25px; border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.07); display: flex; flex-wrap: wrap; gap: 20px;
+            align-items: center; justify-content: center; border: 1px solid #e0e0e0;
+        }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        .control-group label { font-weight: 600; font-size: 0.95em; color: #2c3e50; }
+        .control-group input[type="file"], .control-group input[type="date"] {
+            padding: 9px; border: 1px solid #ced4da; border-radius: 5px; font-size: 0.95em;
+            transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+        }
+        .control-group input[type="date"]:focus { border-color: #0078d4; box-shadow: 0 0 0 0.2rem rgba(0,120,212,.25); }
+
+        .chart-title { text-align: center; font-size: 1.4em; color: #004a7f; margin-top: 30px;
+                       margin-bottom: 18px; border-bottom: 2px solid #0078d4; padding-bottom: 10px; font-weight: 500; }
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px; margin-bottom: 25px; }
+        .chart-box { background-color: white; border: 1px solid #e0e0e0; border-radius: 8px;
+                     box-shadow: 0 4px 12px rgba(0,0,0,0.08); padding: 20px; overflow: hidden; min-height: 400px}
+        .full-width-chart { grid-column: 1 / -1; }
+        .loader, .message { text-align: center; font-size: 1.2em; padding: 20px; }
+        .notes { text-align: left; font-size: 0.9em; color: #555; margin-top: 40px; padding: 15px;
+                 background-color: #eef1f5; border-radius: 4px; border-left: 5px solid #0078d4;}
+        .notes strong { display: block; margin-bottom: 5px; color: #004a7f;}
+        .plotly-graph-div { margin: auto; }
+        .hidden { display: none; }
+
+        .summary-section, .findings-section { background-color: white; padding: 25px; margin-top: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 20px; }
+        .summary-item { background-color: #f8f9fa; padding: 15px; border-radius: 6px; text-align: center; border: 1px solid #e9ecef;}
+        .summary-item h3 { margin-top: 0; color: #005a9e; font-size: 1.1em; margin-bottom: 8px;}
+        .summary-item p { font-size: 1.4em; font-weight: 600; color: #2c3e50; margin: 0; word-wrap: break-word; }
+        .findings-section h2 { color: #004a7f; text-align: center; border-bottom: 2px solid #0078d4; padding-bottom: 10px;}
+        .findings-section p { line-height: 1.6; color: #333; margin-bottom: 10px;}
+        .findings-section ul { list-style-type: disc; margin-left: 20px; }
+        .findings-section strong { color: #005a9e; }
+        .dynamic-value { font-weight: bold; color: #0078d4; }
+
+
+         @media (max-width: 992px) {
+            .grid-container { grid-template-columns: 1fr; }
+            .controls-section { flex-direction: column; align-items: stretch; }
+        }
+        @media (max-width: 768px) {
+            header h1 { font-size: 1.8em; }
+            .chart-title { font-size: 1.2em; }
+            .summary-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>European Natural Gas Trading Overview</h1>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="controls-section">
+            <div class="control-group">
+                <label for="csvFileInput">1. Upload ACER Data (CSV):</label>
+                <input type="file" id="csvFileInput" accept=".csv">
+            </div>
+            <div class="control-group">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" disabled>
+            </div>
+            <div class="control-group">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" disabled>
+            </div>
+        </div>
+
+        <div id="loader" class="loader hidden">Processing data and generating charts...</div>
+        <div id="errorMessage" class="message hidden" style="color: red;"></div>
+        <div id="successMessage" class="message hidden" style="color: green;"></div>
+
+        <div id="chartsArea" class="hidden">
+            <div class="chart-box full-width-chart" id="mapContainer">
+                <div class="chart-title">Trading Activity by Country (Heatmap)</div>
+                <div id="choroplethMap"></div>
+            </div>
+
+            <div class="chart-box full-width-chart" id="dailyTotalTransactionsContainer">
+                <div class="chart-title">Daily Transaction Volume</div>
+                <div id="dailyTotalTransactionsChart"></div>
+            </div>
+
+            <div class="chart-box full-width-chart" id="dailyBuySellContainer">
+                <div class="chart-title">Daily Buy vs. Sell Transactions</div>
+                <div id="dailyBuySellChart"></div>
+            </div>
+
+            <div class="chart-box full-width-chart" id="dailyTopHubsShareContainer">
+                <div class="chart-title">Daily Transaction Share of Top Hubs (TTF, THE, PVB)</div>
+                <div id="dailyTopHubsShareChart"></div>
+            </div>
+
+            <div class="grid-container">
+                <div class="chart-box" id="topHubsContainer">
+                    <div class="chart-title">Top 15 Trading Hubs by Transactions</div>
+                    <div id="topHubsChart"></div>
+                </div>
+                <div class="chart-box" id="hubPercentageContainer">
+                    <div class="chart-title">Transaction Share by Top Hubs</div>
+                    <div id="hubPercentageDonut"></div>
+                </div>
+            </div>
+            <div class="grid-container">
+                 <div class="chart-box" id="countryBarContainer">
+                    <div class="chart-title">Transactions by Country/Region (Top 20)</div>
+                    <div id="countryBarChart"></div>
+                </div>
+                <div class="chart-box" id="dayOfWeekContainer">
+                    <div class="chart-title">Transactions by Day of the Week</div>
+                    <div id="dayOfWeekChart"></div>
+                </div>
+            </div>
+
+
+             <div class="grid-container">
+                <div class="chart-box" id="contractTypeContainer">
+                    <div class="chart-title">Transaction Share by Contract Type</div>
+                    <div id="contractTypeDonut"></div>
+                </div>
+                <div class="chart-box" id="buySellContainer">
+                    <div class="chart-title">Transaction Share by Buy/Sell Indicator</div>
+                    <div id="buySellDonut"></div>
+                </div>
+            </div>
+
+            <div class="summary-section">
+                <div class="chart-title">Key Summary Statistics (for selected period)</div>
+                <div class="summary-grid">
+                    <div class="summary-item"><h3>Total Transactions</h3><p id="summaryTotalTransactions">-</p></div>
+                    <div class="summary-item"><h3>Approx. Unique Market Participants</h3><p id="summaryUniqueMPs">-</p></div>
+                    <div class="summary-item"><h3>Most Active Country</h3><p id="summaryMostActiveCountry">-</p></div>
+                    <div class="summary-item"><h3>Most Active Hub</h3><p id="summaryMostActiveHub">-</p></div>
+                    <div class="summary-item"><h3>Busiest Day</h3><p id="summaryBusiestDay">-</p></div>
+                    <div class="summary-item"><h3>Total Buy Transactions</h3><p id="summaryBuyTransactions">-</p></div>
+                    <div class="summary-item"><h3>Total Sell Transactions</h3><p id="summarySellTransactions">-</p></div>
+                </div>
+            </div>
+
+            <div class="findings-section hidden" id="findingsSection">
+                <h2>Interpreted Findings & Market Insights</h2>
+                <p>The analyzed period reveals a total of <strong class="dynamic-value" id="findingTotalTransactions">-</strong> transactions, with an approximate <strong class="dynamic-value" id="findingUniqueMPs">-</strong> market participant instances engaging in trading.</p>
+                <p><strong>Hub Dominance:</strong> The <strong class="dynamic-value" id="findingMostActiveHubName">-</strong> stands out as the most active trading hub, accounting for <strong class="dynamic-value" id="findingMostActiveHubTransactions">-</strong> transactions. This is mirrored at the country level, where <strong class="dynamic-value" id="findingMostActiveCountryName">-</strong> leads with <strong class="dynamic-value" id="findingMostActiveCountryTransactions">-</strong> transactions, underscoring the hub's significance. Other key hubs like <strong class="dynamic-value" id="findingSecondHubName">-</strong> (<strong class="dynamic-value" id="findingSecondHubTransactions">-</strong> transactions) also play crucial roles in regional liquidity.</p>
+                <p><strong>Trading Rhythm:</strong> Activity peaks significantly on <strong class="dynamic-value" id="findingBusiestDayOfWeek">-</strong>, which saw a total of <strong class="dynamic-value" id="findingBusiestDayOfWeekTransactions">-</strong> transactions during the selected period. This suggests strategic positioning ahead of weekends or for multiple delivery days. Weekend activity is substantially lower.</p>
+                <p><strong>Trading Mechanisms:</strong> The market heavily favors <strong class="dynamic-value" id="findingDominantContractType">-</strong> (<strong class="dynamic-value" id="findingDominantContractTypePercentage">-</strong>% of transactions), highlighting the preference for flexible, continuous market access over scheduled auctions for the bulk of trading activities.</p>
+                <p><strong>Daily Fluctuations:</strong> Daily transaction volumes show considerable volatility, with the busiest single day being <strong class="dynamic-value" id="findingBusiestSingleDayDate">-</strong> with <strong class="dynamic-value" id="findingBusiestSingleDayTransactions">-</strong> transactions. Buy-side reported transactions totaled <strong class="dynamic-value" id="findingTotalBuyTransactions">-</strong>, while sell-side reported transactions reached <strong class="dynamic-value" id="findingTotalSellTransactions">-</strong>.</p>
+            </div>
+
+            <p class="notes">
+                <strong>Data Notes:</strong>
+                <br>1. For visualizations involving counts, where original data indicated '<6' transactions or market participants, a value of '3' has been substituted as an approximation.
+                <br>2. The geographic map excludes aggregated 'EU' data for clarity. Other charts may include these using their official names.
+                <br>3. DPOZ codes in the "Top Trading Hubs" chart are mapped to known hub names where available.
+                <br>4. Data reflects day-ahead and within-day natural gas trading. Use date filters to narrow the analysis period.
+                <br>5. **Contract Types:** 'CO' typically refers to **Continuous Trading**, while 'AU' refers to **Auction-based trading**. 'All' indicates aggregated data where the specific contract type might not be disaggregated for that particular entry.
+            </p>
+        </div>
+    </div>
+
+<script>
+    const countryDetails = {
+        "AT": { name: "Austria", alpha3: "AUT" }, "BE": { name: "Belgium", alpha3: "BEL" },
+        "BG": { name: "Bulgaria", alpha3: "BGR" }, "CZ": { name: "Czech Republic", alpha3: "CZE" },
+        "DE": { name: "Germany", alpha3: "DEU" }, "DK": { name: "Denmark", alpha3: "DNK" },
+        "EE": { name: "Estonia", alpha3: "EST" }, "EL": { name: "Greece", alpha3: "GRC" },
+        "ES": { name: "Spain", alpha3: "ESP" }, "FI": { name: "Finland", alpha3: "FIN" },
+        "FR": { name: "France", alpha3: "FRA" }, "HR": { name: "Croatia", alpha3: "HRV" },
+        "HU": { name: "Hungary", alpha3: "HUN" }, "IE": { name: "Ireland", alpha3: "IRL" },
+        "IT": { name: "Italy", alpha3: "ITA" }, "LT": { name: "Lithuania", alpha3: "LTU" },
+        "LU": { name: "Luxembourg", alpha3: "LUX" }, "LV": { name: "Latvia", alpha3: "LVA" },
+        "MT": { name: "Malta", alpha3: "MLT" }, "NL": { name: "Netherlands", alpha3: "NLD" },
+        "PL": { name: "Poland", alpha3: "POL" }, "PT": { name: "Portugal", alpha3: "PRT" },
+        "RO": { name: "Romania", alpha3: "ROU" }, "SE": { name: "Sweden", alpha3: "SWE" },
+        "SI": { name: "Slovenia", alpha3: "SVN" }, "SK": { name: "Slovakia", alpha3: "SVK" },
+        "GB": { name: "United Kingdom", alpha3: "GBR" }, "CH": { name: "Switzerland", alpha3: "CHE" },
+        "NO": { name: "Norway", alpha3: "NOR" },
+        "EE-LV": { name: "Estonia-Latvia VTP", alpha3: null },
+        "EU": { name: "European Union (Aggregated)", alpha3: null }
+    };
+
+    const dpozDetails = {
+        "21Y000000000078W": { name: "Finland (Gasgrid VTP)" }, "21Z000000000520T": { name: "Lithuania (Amber Grid VTP)" },
+        "21Y000000000026E": { name: "Bulgaria (Bulgartransgaz VTP)" }, "21Y000000000003Q": { name: "Denmark (Energinet VTP)" },
+        "21Y000000000087V": { name: "Poland (GAZ-SYSTEM VTP)" }, "21Y---A001A001-B": { name: "Czech Republic (OTE CZ VTP)" },
+        "39YSINBP000000NE": { name: "Hungary (Hungarian VTP)" }, "60Y000000000001I": { name: "Romania (Transgaz VTP)" },
+        "21Y000000000009E": { name: "Austria (CEGH VTP)" }, "21Y---A001A010-A": { name: "Italy (PSV)" },
+        "21Z000000000248J": { name: "Belgium (ZTP Zeebrugge)" }, "21Y0000000001278": { name: "France (PEG)" },
+        "21Y---A002A005-T": { name: "Spain (PVB)" }, "37Y005053MH0000R": { name: "Germany (THE VTP)" },
+        "21YNL----TTF---1": { name: "Netherlands (TTF)" }, "21Y0000000001359": { name: "Estonia-Latvia VTP (GET Baltic)"},
+        "16ZVTP---------N": { name: "Portugal (REN VTP)"}, "21Y000000000131H": { name: "Greece (DESFA VTP)"}
+    };
+
+    const loader = document.getElementById('loader');
+    const chartsArea = document.getElementById('chartsArea');
+    const findingsSectionDiv = document.getElementById('findingsSection');
+    const errorMessageDiv = document.getElementById('errorMessage');
+    const successMessageDiv = document.getElementById('successMessage');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    let fullDataset = [];
+
+    function showMessage(type, message) { /* ... (same as before) ... */ }
+    function getDetail(code, detailsObject, detailType = 'name') { /* ... (same as before) ... */ }
+    function cleanDataRow(row) { /* ... (same as before) ... */ }
+    function filterDataByDate(data, startDateStr, endDateStr) { /* ... (same as before) ... */ }
+    function createDailyTotalTransactionsChart(data) { /* ... (same as before) ... */ }
+    function createDailyBuySellChart(data) { /* ... (same as before) ... */ }
+    function createDayOfWeekChart(data) { /* ... (same as before) ... */ }
+    function createTopHubsBarChart(data, topN = 15) { /* ... (same as before) ... */ }
+    function createCountryBarChart(data) { /* ... (same as before) ... */ }
+    function createDonutChart(elementId, data, fieldName, valueField = 'noOfTransactions') { /* ... (same as before) ... */ }
+
+    // --- Corrected and refined function implementations ---
+    function showMessage(type, message) {
+        const div = type === 'error' ? errorMessageDiv : successMessageDiv;
+        const otherDiv = type === 'error' ? successMessageDiv : errorMessageDiv;
+        if (message && message.trim() !== "") {
+            div.textContent = message;
+            div.classList.remove('hidden');
+        } else {
+            div.classList.add('hidden');
+        }
+        if (message && message.trim() !== "") { otherDiv.classList.add('hidden'); }
+        console.log(`${type.toUpperCase()}: ${message}`);
+    }
+
+    function getDetail(code, detailsObject, detailType = 'name') {
+        if (detailsObject && code && detailsObject[code] && detailsObject[code][detailType] !== undefined) {
+            return detailsObject[code][detailType];
+        }
+        return code;
+    }
+
+    function cleanDataRow(row) {
+        let transactions = 0;
+        if (typeof row.noOfTransactions === 'string' && row.noOfTransactions.toLowerCase() === '<6') {
+            transactions = 3;
+        } else {
+            transactions = parseInt(row.noOfTransactions);
+            if (isNaN(transactions)) transactions = 0;
+        }
+        let marketParticipants = 0;
+         if (typeof row.noOfMPs === 'string' && row.noOfMPs.toLowerCase() === '<6') {
+            marketParticipants = 3;
+        } else {
+            marketParticipants = parseInt(row.noOfMPs);
+            if (isNaN(marketParticipants)) marketParticipants = 0;
+        }
+        let transactionDate = null;
+        let dayOfWeek = null;
+        if (row.transactionDate && typeof row.transactionDate === 'string') {
+            try {
+                const dateStrRaw = row.transactionDate.trim();
+                if (dateStrRaw.startsWith('Y') && dateStrRaw.includes('M') && dateStrRaw.includes('D')) {
+                    const year = parseInt(dateStrRaw.substring(1, 5));
+                    const month = parseInt(dateStrRaw.substring(dateStrRaw.indexOf('M') + 1, dateStrRaw.indexOf('D'))) - 1;
+                    const day = parseInt(dateStrRaw.substring(dateStrRaw.indexOf('D') + 1));
+                    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && month >=0 && month <=11 && day >=1 && day <=31) {
+                        transactionDate = new Date(Date.UTC(year, month, day));
+                        if (!isNaN(transactionDate.getTime())) {
+                            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                            dayOfWeek = days[transactionDate.getUTCDay()];
+                        } else { transactionDate = null; }
+                    } else { transactionDate = null; }
+                } else { transactionDate = null; }
+            } catch (e) { console.warn(`Error parsing date: ${row.transactionDate}`, e); transactionDate = null; }
+        }
+        let alpha3Code = null;
+        let countryName = row.country || "Unknown Country";
+        if (row.country) {
+            const countryKey = row.country.trim();
+            if (countryDetails[countryKey]) {
+                alpha3Code = countryDetails[countryKey].alpha3;
+                countryName = countryDetails[countryKey].name;
+            } else if (countryKey.includes('-')) {
+                 countryName = getDetail(countryKey, countryDetails, 'name');
+                 alpha3Code = null;
+            }
+        }
+        return {
+            ...row, noOfTransactions: transactions, noOfMPs: marketParticipants, transactionDateObj: transactionDate,
+            dayOfWeek: dayOfWeek, country_display_name: countryName,
+            alpha3_map_code: (row.country && countryDetails[row.country.trim()] && countryDetails[row.country.trim()].alpha3) ? countryDetails[row.country.trim()].alpha3 : null,
+            dpoz_display_name: getDetail(row.DPOZ, dpozDetails, 'name')
+        };
+    }
+
+    function filterDataByDate(data, startDateStr, endDateStr) {
+        const start = startDateStr ? new Date(startDateStr + "T00:00:00.000Z") : null;
+        const end = endDateStr ? new Date(endDateStr + "T23:59:59.999Z") : null;
+        if ((!start || isNaN(start.getTime())) && (!end || isNaN(end.getTime()))) return data;
+        return data.filter(row => {
+            if (!row.transactionDateObj || isNaN(row.transactionDateObj.getTime())) return false;
+            const rowDate = row.transactionDateObj;
+            let inRange = true;
+            if (start && !isNaN(start.getTime())) inRange = inRange && rowDate >= start;
+            if (end && !isNaN(end.getTime()))   inRange = inRange && rowDate <= end;
+            return inRange;
+        });
+    }
+
+    function plotAllCharts(dataToDisplay) {
+        console.log("PlotAllCharts called with data count:", dataToDisplay.length);
+        if (!dataToDisplay || dataToDisplay.length === 0) {
+            showMessage('error', 'No data available for the selected period or after applying filters.');
+            chartsArea.classList.add('hidden');
+            findingsSectionDiv.classList.add('hidden');
+            updateSummaryStatistics([]);
+            return;
+        }
+        chartsArea.classList.remove('hidden');
+        findingsSectionDiv.classList.remove('hidden');
+        if (successMessageDiv.textContent.includes("Data loaded")) { successMessageDiv.classList.add('hidden'); }
+        errorMessageDiv.classList.add('hidden');
+
+        ['choroplethMap', 'dailyTotalTransactionsChart', 'dailyBuySellChart', 'dailyTopHubsShareChart', 'topHubsChart', 'hubPercentageDonut', 'countryBarChart', 'dayOfWeekChart', 'contractTypeDonut', 'buySellDonut']
+            .forEach(id => { const el = document.getElementById(id); if (el) Plotly.purge(el); });
+
+        try {
+            createChoroplethMap(dataToDisplay);
+            createDailyTotalTransactionsChart(dataToDisplay);
+            createDailyBuySellChart(dataToDisplay);
+            createDailyTopHubsShareChart(dataToDisplay);
+            createTopHubsBarChart(dataToDisplay);
+            createHubPercentageDonut(dataToDisplay);
+            createCountryBarChart(dataToDisplay);
+            createDayOfWeekChart(dataToDisplay);
+            createDonutChart('contractTypeDonut', dataToDisplay, 'contractType', 'noOfTransactions');
+            createDonutChart('buySellDonut', dataToDisplay, 'buySellIndicator', 'noOfTransactions');
+            updateSummaryStatistics(dataToDisplay); // Crucial call
+        } catch (e) {
+            console.error("Error during plotting charts:", e);
+            showMessage('error', `An error occurred while generating charts: ${e.message}. Check console.`);
+        }
+    }
+
+    function createChoroplethMap(data) { /* ... (same as previous version with YlOrRd) ... */ }
+    function createDailyTotalTransactionsChart(data) { /* ... (same, no MA) ... */ }
+    function createDailyBuySellChart(data) { /* ... (same) ... */ }
+    function createDayOfWeekChart(data) { /* ... (same) ... */ }
+    function createTopHubsBarChart(data, topN = 15) { /* ... (same) ... */ }
+    function createCountryBarChart(data) { /* ... (same) ... */ }
+    function createDonutChart(elementId, data, fieldName, valueField = 'noOfTransactions') { /* ... (same) ... */ }
+
+    function createChoroplethMap(data) {
+        const countryTransactions = {};
+        data.forEach(row => {
+            if (row.alpha3_map_code) {
+                countryTransactions[row.alpha3_map_code] = (countryTransactions[row.alpha3_map_code] || 0) + row.noOfTransactions;
+            }
+        });
+        const locations = Object.keys(countryTransactions);
+        const zValues = Object.values(countryTransactions);
+        const hoverNames = locations.map(alpha3 => getDetail(Object.keys(countryDetails).find(k => countryDetails[k].alpha3 === alpha3), countryDetails, 'name'));
+        const mapData = [{
+            type: 'choropleth', locations: locations, z: zValues, locationmode: 'ISO-3',
+            text: hoverNames, colorscale: 'YlOrRd', colorbar: { title: 'Transactions', thickness: 15, len: 0.7, y: 0.5 },
+            hovertemplate: '<b>%{text}</b><br>Transactions: %{z:,}<extra></extra>', zmin: 0
+        }];
+        const layout = {
+            geo: { scope: 'europe', projection: { type: 'mercator' }, center: { lon: 12, lat: 53 },
+                   landcolor: 'rgb(230, 230, 230)', subunitcolor: 'rgb(255, 255, 255)',
+                   bgcolor: 'rgba(255,255,255,0)', showland: true,
+                   showocean: true, oceancolor: 'rgb(215, 230, 240)',
+                   showcountries: true, countrycolor: 'rgb(180,180,180)', resolution: 50 },
+            margin: { r: 0, t: 10, l: 0, b: 0 }, paper_bgcolor: 'rgba(255,255,255,0)', plot_bgcolor: 'rgba(255,255,255,0)'
+        };
+        Plotly.newPlot('choroplethMap', mapData, layout, {responsive: true});
+    }
+    function createDailyTotalTransactionsChart(data) {
+        const dailyData = {};
+        data.forEach(row => { if (row.transactionDateObj) { const dateString = row.transactionDateObj.toISOString().split('T')[0]; dailyData[dateString] = (dailyData[dateString] || 0) + row.noOfTransactions; }});
+        const sortedDates = Object.keys(dailyData).sort((a,b) => new Date(a) - new Date(b));
+        const traces = [{ x: sortedDates, y: sortedDates.map(date => dailyData[date]), type: 'scatter', mode: 'lines+markers', name: 'Daily Transactions', line: {color: '#007bff', width: 2.5}, marker: {size: 5, color: '#0056b3'} }];
+        const layout = { xaxis: { title: 'Date', automargin: true, type: 'date' }, yaxis: { title: 'Number of Transactions', automargin: true, rangemode: 'tozero' }, margin: { t: 30, b: 50, l: 70, r:20 }, hovermode: 'x unified'};
+        Plotly.newPlot('dailyTotalTransactionsChart', traces, layout, {responsive: true});
+    }
+    function createDailyBuySellChart(data) {
+        const dailyBuySell = {};
+        data.forEach(row => { if (row.transactionDateObj) { const dateString = row.transactionDateObj.toISOString().split('T')[0]; if (!dailyBuySell[dateString]) dailyBuySell[dateString] = { B: 0, S: 0 }; if (row.buySellIndicator === 'B') dailyBuySell[dateString].B += row.noOfTransactions; else if (row.buySellIndicator === 'S') dailyBuySell[dateString].S += row.noOfTransactions; }});
+        const sortedDates = Object.keys(dailyBuySell).sort((a,b) => new Date(a) - new Date(b));
+        const buyTrace = { x: sortedDates, y: sortedDates.map(date => dailyBuySell[date].B), name: 'Buy Transactions', type: 'bar', marker: { color: 'rgba(40, 167, 69, 0.8)' } };
+        const sellTrace = { x: sortedDates, y: sortedDates.map(date => dailyBuySell[date].S), name: 'Sell Transactions', type: 'bar', marker: { color: 'rgba(220, 53, 69, 0.8)' } };
+        const layout = { barmode: 'stack', xaxis: { title: 'Date', type: 'date', automargin: true }, yaxis: { title: 'Number of Transactions', automargin: true, rangemode: 'tozero' }, margin: { t: 40, b: 50, l: 70, r:20 }, legend: {orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1}};
+        Plotly.newPlot('dailyBuySellChart', [buyTrace, sellTrace], layout, {responsive: true});
+    }
+     function createDayOfWeekChart(data) {
+        const dayCounts = { "Sunday": 0, "Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0, "Saturday": 0 };
+        data.forEach(row => { if (row.dayOfWeek) dayCounts[row.dayOfWeek] += row.noOfTransactions; });
+        const daysOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        const yValues = daysOrder.map(day => dayCounts[day]);
+        const chartData = [{ type: 'bar', x: daysOrder, y: yValues, text: yValues.map(val => val.toLocaleString()), textposition: 'outside', marker: {color: '#ffc107'} }];
+        const layout = { xaxis: { title: 'Day of the Week', automargin: true, categoryorder: 'array', categoryarray: daysOrder }, yaxis: { title: 'Total Transactions', automargin: true, rangemode: 'tozero' }, margin: { t: 30, b: 50, l: 70, r:20 }};
+        Plotly.newPlot('dayOfWeekChart', chartData, layout, {responsive: true});
+    }
+     function createTopHubsBarChart(data, topN = 15) {
+        const hubTransactions = {};
+        data.forEach(row => { if (row.DPOZ && row.DPOZ !== 'EU') { const hubName = row.dpoz_display_name; hubTransactions[hubName] = (hubTransactions[hubName] || 0) + row.noOfTransactions; }});
+        const sortedHubs = Object.entries(hubTransactions).sort(([,a],[,b]) => b-a).slice(0, topN);
+        const chartData = [{ type: 'bar', x: sortedHubs.map(e => e[1]), y: sortedHubs.map(e => e[0]), orientation: 'h', text: sortedHubs.map(e => e[1].toLocaleString()), textposition: 'outside', marker: {color: '#6f42c1'} }];
+        const layout = { yaxis: { autorange: 'reversed', categoryorder: 'total ascending', automargin: true, tickfont: {size: 10} }, xaxis: { title: 'Total Transactions', rangemode: 'tozero' }, margin: { l: 260, r: 20, t: 30, b: 50 }};
+        Plotly.newPlot('topHubsChart', chartData, layout, {responsive: true});
+    }
+    function createCountryBarChart(data) {
+        const countryTransactions = {};
+        data.forEach(row => { const countryKey = row.country_display_name || "Unknown"; countryTransactions[countryKey] = (countryTransactions[countryKey] || 0) + row.noOfTransactions; });
+        const sortedCountries = Object.entries(countryTransactions).sort(([,a],[,b]) => b-a).slice(0, 20);
+        const chartData = [{ type: 'bar', x: sortedCountries.map(e => e[0]), y: sortedCountries.map(e => e[1]), text: sortedCountries.map(e => e[1].toLocaleString()), textposition: 'outside', marker: {color: '#007bff'} }];
+        const layout = { xaxis: { title: 'Country/Region', tickangle: -45, automargin: true }, yaxis: { title: 'Total Transactions', rangemode: 'tozero' }, margin: { t: 30, b: 120, l: 70, r:20 }};
+        Plotly.newPlot('countryBarChart', chartData, layout, {responsive: true});
+    }
+    function createDonutChart(elementId, data, fieldName, valueField = 'noOfTransactions') {
+        const counts = {};
+        data.forEach(row => { const key = row[fieldName] || "Unknown"; counts[key] = (counts[key] || 0) + row[valueField]; });
+        const labels = Object.keys(counts);
+        const values = Object.values(counts);
+        const chartData = [{ type: 'pie', labels: labels, values: values, hole: .4, textinfo: 'percent+label', pull: labels.map((_, i) => (i === 0 ? 0.05 : 0)), marker: { colors: ['#17a2b8', '#fd7e14', '#6c757d', '#28a745',  '#6610f2', '#ffc107', '#e83e8c'] } }];
+        const layout = { margin: { t: 30, b: 0, l: 30, r: 30 }, legend: {orientation: 'h', yanchor: 'bottom', y: -0.1, xanchor: 'center', x: 0.5}};
+        Plotly.newPlot(elementId, chartData, layout, {responsive: true});
+    }
+
+    // NEW: Hub Percentage Donut Chart
+    function createHubPercentageDonut(data, topN = 7) {
+        const hubTransactions = {};
+        let totalAllHubTransactions = 0;
+        data.forEach(row => {
+            if (row.DPOZ && row.DPOZ !== 'EU') {
+                 const hubName = row.dpoz_display_name;
+                 hubTransactions[hubName] = (hubTransactions[hubName] || 0) + row.noOfTransactions;
+                 totalAllHubTransactions += row.noOfTransactions;
+            }
+        });
+
+        const sortedHubs = Object.entries(hubTransactions).sort(([,a],[,b]) => b-a);
+        const topHubsData = sortedHubs.slice(0, topN);
+        const otherHubsTransactions = sortedHubs.slice(topN).reduce((sum, current) => sum + current[1], 0);
+
+        const labels = topHubsData.map(entry => entry[0]);
+        const values = topHubsData.map(entry => entry[1]);
+
+        if (otherHubsTransactions > 0) {
+            labels.push("Other Hubs");
+            values.push(otherHubsTransactions);
+        }
+
+        const chartData = [{
+            type: 'pie', labels: labels, values: values,
+            hole: .4, textinfo: 'percent+label',
+            pull: labels.map((_, i) => (i < topN && i === 0 ? 0.05 : 0)), // Pull first of top N
+            marker: { colors: ['#007bff', '#6610f2', '#6f42c1', '#e83e8c', '#fd7e14', '#ffc107', '#20c997', '#6c757d'] }
+        }];
+        const layout = {
+            margin: { t: 30, b: 0, l: 30, r: 30 },
+            legend: {orientation: 'h', yanchor: 'bottom', y: -0.2, xanchor: 'center', x: 0.5}
+        };
+        Plotly.newPlot('hubPercentageDonut', chartData, layout, {responsive: true});
+    }
+
+    // NEW: Daily Share of Top 3 Hubs
+    function createDailyTopHubsShareChart(data) {
+        const dailyData = {}; // { date: {total: X, ttf: Y, the: Z, pvb: W, others: A} }
+        const top3DpozCodes = {
+            ttf: "21YNL----TTF---1",
+            the: "37Y005053MH0000R",
+            pvb: "21Y---A002A005-T"
+        };
+
+        data.forEach(row => {
+            if (row.transactionDateObj) {
+                const dateString = row.transactionDateObj.toISOString().split('T')[0];
+                if (!dailyData[dateString]) {
+                    dailyData[dateString] = { total: 0, ttf: 0, the: 0, pvb: 0, others: 0 };
+                }
+                dailyData[dateString].total += row.noOfTransactions;
+                if (row.DPOZ === top3DpozCodes.ttf) dailyData[dateString].ttf += row.noOfTransactions;
+                else if (row.DPOZ === top3DpozCodes.the) dailyData[dateString].the += row.noOfTransactions;
+                else if (row.DPOZ === top3DpozCodes.pvb) dailyData[dateString].pvb += row.noOfTransactions;
+                else if (row.DPOZ !== 'EU') dailyData[dateString].others += row.noOfTransactions;
+            }
+        });
+
+        const sortedDates = Object.keys(dailyData).sort((a,b) => new Date(a) - new Date(b));
+        const ttfShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].ttf / dailyData[date].total) * 100 : 0);
+        const theShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].the / dailyData[date].total) * 100 : 0);
+        const pvbShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].pvb / dailyData[date].total) * 100 : 0);
+        const othersShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].others / dailyData[date].total) * 100 : 0);
+
+        const traces = [
+            { x: sortedDates, y: ttfShare, type: 'scatter', mode: 'lines', name: 'Netherlands (TTF) Share', stackgroup: 'one', line: {color: '#007bff'} },
+            { x: sortedDates, y: theShare, type: 'scatter', mode: 'lines', name: 'Germany (THE VTP) Share', stackgroup: 'one', line: {color: '#6f42c1'} },
+            { x: sortedDates, y: pvbShare, type: 'scatter', mode: 'lines', name: 'Spain (PVB) Share', stackgroup: 'one', line: {color: '#fd7e14'} },
+            { x: sortedDates, y: othersShare, type: 'scatter', mode: 'lines', name: 'Other Hubs Share', stackgroup: 'one', line: {color: '#6c757d'} }
+        ];
+        const layout = {
+            xaxis: { title: 'Date', type: 'date', automargin: true },
+            yaxis: { title: 'Percentage of Daily Transactions (%)', automargin: true, ticksuffix: '%', range: [0, 100] },
+            margin: { t: 40, b: 50, l: 80, r:20 },
+            hovermode: 'x unified',
+            legend: {orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1}
+        };
+        Plotly.newPlot('dailyTopHubsShareChart', traces, layout, {responsive: true});
+    }
+
+
+    function updateSummaryStatistics(data) {
+        console.log("updateSummaryStatistics called with data length:", data.length);
+        const summaryElements = {
+            totalTransactions: document.getElementById('summaryTotalTransactions'),
+            uniqueMPs: document.getElementById('summaryUniqueMPs'),
+            mostActiveCountry: document.getElementById('summaryMostActiveCountry'),
+            mostActiveHub: document.getElementById('summaryMostActiveHub'),
+            busiestDay: document.getElementById('summaryBusiestDay'),
+            buyTransactions: document.getElementById('summaryBuyTransactions'),
+            sellTransactions: document.getElementById('summarySellTransactions')
+        };
+        const findingsElements = {
+            totalTransactions: document.getElementById('findingTotalTransactions'),
+            uniqueMPs: document.getElementById('findingUniqueMPs'),
+            mostActiveHubName: document.getElementById('findingMostActiveHubName'),
+            mostActiveHubTransactions: document.getElementById('findingMostActiveHubTransactions'),
+            mostActiveCountryName: document.getElementById('findingMostActiveCountryName'),
+            mostActiveCountryTransactions: document.getElementById('findingMostActiveCountryTransactions'),
+            secondHubName: document.getElementById('findingSecondHubName'),
+            secondHubTransactions: document.getElementById('findingSecondHubTransactions'),
+            busiestDayOfWeek: document.getElementById('findingBusiestDayOfWeek'),
+            busiestDayOfWeekTransactions: document.getElementById('findingBusiestDayOfWeekTransactions'),
+            dominantContractType: document.getElementById('findingDominantContractType'),
+            dominantContractTypePercentage: document.getElementById('findingDominantContractTypePercentage'),
+            busiestSingleDayDate: document.getElementById('findingBusiestSingleDayDate'),
+            busiestSingleDayTransactions: document.getElementById('findingBusiestSingleDayTransactions'),
+            totalBuyTransactions: document.getElementById('findingTotalBuyTransactions'),
+            totalSellTransactions: document.getElementById('findingTotalSellTransactions')
+        };
+
+        if (!data || data.length === 0) {
+            console.log("No data for summary, clearing fields.");
+            Object.values(summaryElements).forEach(el => { if(el) el.textContent = '0'; });
+            Object.values(findingsElements).forEach(el => { if(el) el.textContent = 'N/A'; });
+            findingsSectionDiv.classList.add('hidden');
+            return;
+        }
+        findingsSectionDiv.classList.remove('hidden');
+
+        let totalTransactions = 0;
+        const marketParticipantsProxies = new Set();
+        const countryCounts = {};
+        const hubCounts = {};
+        const dailyTransactionCounts = {};
+        const dayOfWeekCounts = {"Monday":0,"Tuesday":0,"Wednesday":0,"Thursday":0,"Friday":0,"Saturday":0,"Sunday":0};
+        const contractTypeCounts = {};
+        let totalBuy = 0;
+        let totalSell = 0;
+
+        data.forEach(row => {
+            totalTransactions += row.noOfTransactions;
+            if (row.DPOZ && row.DPOZ !== 'EU' && row.noOfMPs) {
+                 marketParticipantsProxies.add(row.DPOZ + "|" + row.noOfMPs);
+            }
+            const countryName = row.country_display_name || "Unknown";
+            countryCounts[countryName] = (countryCounts[countryName] || 0) + row.noOfTransactions;
+            const hubName = row.dpoz_display_name || "Unknown Hub";
+            if (row.DPOZ && row.DPOZ !== 'EU') {
+                hubCounts[hubName] = (hubCounts[hubName] || 0) + row.noOfTransactions;
+            }
+            if (row.transactionDateObj) {
+                const dateString = row.transactionDateObj.toISOString().split('T')[0];
+                dailyTransactionCounts[dateString] = (dailyTransactionCounts[dateString] || 0) + row.noOfTransactions;
+            }
+            if(row.dayOfWeek) dayOfWeekCounts[row.dayOfWeek] += row.noOfTransactions;
+            const contractType = row.contractType || "Unknown";
+            contractTypeCounts[contractType] = (contractTypeCounts[contractType] || 0) + row.noOfTransactions;
+            if (row.buySellIndicator === 'B') totalBuy += row.noOfTransactions;
+            if (row.buySellIndicator === 'S') totalSell += row.noOfTransactions;
+        });
+
+        console.log("Calculated totalTransactions for summary:", totalTransactions);
+
+        summaryElements.totalTransactions.textContent = totalTransactions.toLocaleString();
+        summaryElements.uniqueMPs.textContent = marketParticipantsProxies.size.toLocaleString() + " (approx.)";
+        summaryElements.buyTransactions.textContent = totalBuy.toLocaleString();
+        summaryElements.sellTransactions.textContent = totalSell.toLocaleString();
+
+        const sortedCountries = Object.entries(countryCounts).sort(([,a],[,b]) => b-a);
+        const mostActiveCountryEntry = sortedCountries.length > 0 ? sortedCountries[0] : null;
+        summaryElements.mostActiveCountry.textContent = mostActiveCountryEntry ? `${mostActiveCountryEntry[0]} (${mostActiveCountryEntry[1].toLocaleString()})` : '-';
+
+        const sortedHubs = Object.entries(hubCounts).sort(([,a],[,b]) => b-a);
+        const mostActiveHubEntry = sortedHubs.length > 0 ? sortedHubs[0] : null;
+        summaryElements.mostActiveHub.textContent = mostActiveHubEntry ? `${mostActiveHubEntry[0]} (${mostActiveHubEntry[1].toLocaleString()})` : '-';
+        const secondHubEntry = sortedHubs.length > 1 ? sortedHubs[1] : null;
+
+        const sortedDailyCounts = Object.entries(dailyTransactionCounts).sort(([,a],[,b]) => b-a);
+        const busiestDayEntry = sortedDailyCounts.length > 0 ? sortedDailyCounts[0] : null;
+        summaryElements.busiestDay.textContent = busiestDayEntry ? `${busiestDayEntry[0]} (${busiestDayEntry[1].toLocaleString()} trans.)` : '-';
+
+        // Update findings section
+        findingsElements.totalTransactions.textContent = totalTransactions.toLocaleString();
+        findingsElements.uniqueMPs.textContent = marketParticipantsProxies.size.toLocaleString();
+        if (mostActiveHubEntry) {
+            findingsElements.mostActiveHubName.textContent = mostActiveHubEntry[0];
+            findingsElements.mostActiveHubTransactions.textContent = mostActiveHubEntry[1].toLocaleString();
+        } else { findingsElements.mostActiveHubName.textContent = 'N/A'; findingsElements.mostActiveHubTransactions.textContent = 'N/A'; }
+        if (mostActiveCountryEntry) {
+            findingsElements.mostActiveCountryName.textContent = mostActiveCountryEntry[0];
+            findingsElements.mostActiveCountryTransactions.textContent = mostActiveCountryEntry[1].toLocaleString();
+        } else { findingsElements.mostActiveCountryName.textContent = 'N/A'; findingsElements.mostActiveCountryTransactions.textContent = 'N/A';}
+        if (secondHubEntry) {
+            findingsElements.secondHubName.textContent = secondHubEntry[0];
+            findingsElements.secondHubTransactions.textContent = secondHubEntry[1].toLocaleString();
+        } else { findingsElements.secondHubName.textContent = 'N/A'; findingsElements.secondHubTransactions.textContent = 'N/A';}
+
+        const sortedDaysOfWeek = Object.entries(dayOfWeekCounts).sort(([,a],[,b]) => b-a);
+        const busiestDayOfWeekEntry = sortedDaysOfWeek.length > 0 ? sortedDaysOfWeek[0] : null;
+        if(busiestDayOfWeekEntry){
+            findingsElements.busiestDayOfWeek.textContent = busiestDayOfWeekEntry[0];
+            findingsElements.busiestDayOfWeekTransactions.textContent = busiestDayOfWeekEntry[1].toLocaleString();
+        } else { findingsElements.busiestDayOfWeek.textContent = 'N/A'; findingsElements.busiestDayOfWeekTransactions.textContent = 'N/A';}
+
+        const sortedContractTypes = Object.entries(contractTypeCounts).sort(([,a],[,b]) => b-a);
+        const dominantContractTypeEntry = sortedContractTypes.length > 0 ? sortedContractTypes[0] : null;
+        if(dominantContractTypeEntry && totalTransactions > 0){
+            findingsElements.dominantContractType.textContent = getDetail(dominantContractTypeEntry[0], {'CO': {name: 'Continuous Trading'}, 'AU': {name: 'Auction'}, 'All': {name: 'Aggregated/All'}}, 'name');
+            findingsElements.dominantContractTypePercentage.textContent = ((dominantContractTypeEntry[1] / totalTransactions) * 100).toFixed(1);
+        } else { findingsElements.dominantContractType.textContent = 'N/A'; findingsElements.dominantContractTypePercentage.textContent = 'N/A'; }
+
+        if(busiestDayEntry){
+            findingsElements.busiestSingleDayDate.textContent = busiestDayEntry[0];
+            findingsElements.busiestSingleDayTransactions.textContent = busiestDayEntry[1].toLocaleString();
+        } else { findingsElements.busiestSingleDayDate.textContent = 'N/A'; findingsElements.busiestSingleDayTransactions.textContent = 'N/A'; }
+        findingsElements.totalBuyTransactions.textContent = totalBuy.toLocaleString();
+        findingsElements.totalSellTransactions.textContent = totalSell.toLocaleString();
+    }
+
+
+    function handleDateFilterChange() { /* ... (same as before) ... */ }
+    startDateInput.addEventListener('change', handleDateFilterChange);
+    endDateInput.addEventListener('change', handleDateFilterChange);
+    document.getElementById('csvFileInput').addEventListener('change', function(event) { /* ... (same as before) ... */ });
+
+    function handleDateFilterChange() {
+        if (fullDataset.length === 0) {
+            showMessage('error', "Please upload a CSV file first.");
+            return;
+        }
+        loader.classList.remove('hidden');
+        chartsArea.classList.add('hidden');
+        findingsSectionDiv.classList.add('hidden'); // Also hide findings while loading
+        setTimeout(() => {
+            try {
+                const filtered = filterDataByDate(fullDataset, startDateInput.value, endDateInput.value);
+                console.log("Filtered data count for date change:", filtered.length, "Start:", startDateInput.value, "End:", endDateInput.value);
+                plotAllCharts(filtered); // This will handle showing chartsArea and findingsSection
+            } catch (e) {
+                console.error("Error in handleDateFilterChange:", e);
+                showMessage('error', `Error applying date filters: ${e.message}`);
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }, 50);
+    }
+
+    document.getElementById('csvFileInput').addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        chartsArea.classList.add('hidden');
+        findingsSectionDiv.classList.add('hidden');
+        [startDateInput, endDateInput].forEach(input => { input.disabled = true; input.value = ''; });
+        showMessage('success', ''); showMessage('error', '');
+
+        if (file) {
+            if (file.name.endsWith('.csv')) {
+                loader.classList.remove('hidden');
+                showMessage('success', `Selected file: ${file.name}. Processing...`);
+                console.log("File selected:", file.name);
+
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    dynamicTyping: false,
+                    complete: function(results) {
+                        console.log("PapaParse complete. Errors:", results.errors.length, "Raw data rows from CSV:", results.data.length);
+                        loader.classList.add('hidden');
+
+                        if (results.errors.length > 0) {
+                            let errorMsg = 'Error parsing CSV data. ';
+                            results.errors.slice(0,3).forEach(err => errorMsg += `Row ${err.row || 'unknown'}: ${err.message}. `);
+                            if(results.errors.length > 3) errorMsg += ` And ${results.errors.length - 3} more errors.`;
+                            showMessage('error', errorMsg + 'Please ensure correct CSV format and headers.');
+                            console.error("CSV Parsing Errors:", results.errors);
+                            return;
+                        }
+                        if (!results.data || results.data.length === 0) {
+                            showMessage('error', 'CSV file is empty or contains no data rows.'); return;
+                        }
+                        const essentialColumns = ['country', 'noOfTransactions', 'noOfMPs', 'DPOZ', 'contractType', 'buySellIndicator', 'transactionDate'];
+                        const headers = results.meta && results.meta.fields ? results.meta.fields : (results.data.length > 0 ? Object.keys(results.data[0]) : []);
+
+                        if (!headers || headers.length === 0) {
+                             showMessage('error', 'Could not determine headers from CSV file.'); return;
+                        }
+                        const missingColumns = essentialColumns.filter(col => !headers.includes(col));
+                        if (missingColumns.length > 0) {
+                            showMessage('error', `Missing essential columns in CSV: ${missingColumns.join(', ')}. Please check your file.`); return;
+                        }
+
+                        fullDataset = results.data.map(cleanDataRow).filter(row => row.transactionDateObj && !isNaN(row.transactionDateObj.getTime()));
+                        console.log("Cleaned dataset size (with valid dates):", fullDataset.length);
+
+                        if (fullDataset.length === 0) {
+                            showMessage('error', 'No valid data with parseable transaction dates found. Check date format (e.g., YYYYYMMMDD) and data integrity.'); return;
+                        }
+
+                        const dates = fullDataset.map(row => row.transactionDateObj);
+                        const minDate = new Date(Math.min.apply(null, dates));
+                        const maxDate = new Date(Math.max.apply(null, dates));
+                        const formatDateForInput = (date) => date.toISOString().split('T')[0];
+
+                        if (!isNaN(minDate.getTime()) && !isNaN(maxDate.getTime())) {
+                            const minDateStr = formatDateForInput(minDate);
+                            const maxDateStr = formatDateForInput(maxDate);
+                            startDateInput.min = minDateStr; startDateInput.max = maxDateStr; startDateInput.value = minDateStr;
+                            endDateInput.min = minDateStr; endDateInput.max = maxDateStr; endDateInput.value = maxDateStr;
+                            startDateInput.disabled = false; endDateInput.disabled = false;
+                        } else {
+                             showMessage('error', 'Could not determine a valid date range from the data.');
+                             startDateInput.disabled = true; endDateInput.disabled = true; return;
+                        }
+                        plotAllCharts(fullDataset); // Initial plot
+                        showMessage('success', `Data loaded from ${file.name}. Charts generated for the full date range.`);
+                    },
+                    error: function(error, file) {
+                        loader.classList.add('hidden');
+                        console.error("Papa Parse Error on file:", file ? file.name : 'unknown file', error);
+                        showMessage('error', `Error parsing CSV file "${file ? file.name : ''}": ${error.message}`);
+                    }
+                });
+            } else {
+                showMessage('error', 'Please select a .csv file.');
+                chartsArea.classList.add('hidden'); findingsSectionDiv.classList.add('hidden');
+                startDateInput.disabled = true; endDateInput.disabled = true;
+            }
+        }
+    });
+</script>
+
+</body>
+</html>
