@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Natural Gas Trading Dashboard (Hub Shares & Summary Fix v2)</title>
+    <title>Natural Gas Trading Dashboard (Final Declaration Fix)</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -18,7 +18,7 @@
         }
         .control-group { display: flex; flex-direction: column; gap: 5px; }
         .control-group label { font-weight: 600; font-size: 0.95em; color: #2c3e50; }
-        .control-group input[type="file"], .control-group input[type="date"] {
+        .control-group input[type="date"] { /* File input removed */
             padding: 9px; border: 1px solid #ced4da; border-radius: 5px; font-size: 0.95em;
             transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
         }
@@ -68,10 +68,6 @@
     <div class="dashboard-container">
         <div class="controls-section">
             <div class="control-group">
-                <label for="csvFileInput">1. Upload ACER Data (CSV):</label>
-                <input type="file" id="csvFileInput" accept=".csv">
-            </div>
-            <div class="control-group">
                 <label for="startDate">Start Date:</label>
                 <input type="date" id="startDate" disabled>
             </div>
@@ -81,7 +77,7 @@
             </div>
         </div>
 
-        <div id="loader" class="loader hidden">Processing data and generating charts...</div>
+        <div id="loader" class="loader">Loading and Processing NGTData.csv...</div>
         <div id="errorMessage" class="message hidden" style="color: red;"></div>
         <div id="successMessage" class="message hidden" style="color: green;"></div>
 
@@ -173,6 +169,7 @@
     </div>
 
 <script>
+    // **** START OF SINGLE DECLARATION FOR MAPPING OBJECTS ****
     const countryDetails = {
         "AT": { name: "Austria", alpha3: "AUT" }, "BE": { name: "Belgium", alpha3: "BEL" },
         "BG": { name: "Bulgaria", alpha3: "BGR" }, "CZ": { name: "Czech Republic", alpha3: "CZE" },
@@ -204,7 +201,9 @@
         "21YNL----TTF---1": { name: "Netherlands (TTF)" }, "21Y0000000001359": { name: "Estonia-Latvia VTP (GET Baltic)"},
         "16ZVTP---------N": { name: "Portugal (REN VTP)"}, "21Y000000000131H": { name: "Greece (DESFA VTP)"}
     };
+    // **** END OF SINGLE DECLARATION FOR MAPPING OBJECTS ****
 
+    const CSV_FILE_PATH = 'NGTData.csv'; // Path to your CSV, relative to the HTML file
     const loader = document.getElementById('loader');
     const chartsArea = document.getElementById('chartsArea');
     const findingsSectionDiv = document.getElementById('findingsSection');
@@ -214,18 +213,6 @@
     const endDateInput = document.getElementById('endDate');
     let fullDataset = [];
 
-    function showMessage(type, message) { /* ... (same as before) ... */ }
-    function getDetail(code, detailsObject, detailType = 'name') { /* ... (same as before) ... */ }
-    function cleanDataRow(row) { /* ... (same as before) ... */ }
-    function filterDataByDate(data, startDateStr, endDateStr) { /* ... (same as before) ... */ }
-    function createDailyTotalTransactionsChart(data) { /* ... (same as before) ... */ }
-    function createDailyBuySellChart(data) { /* ... (same as before) ... */ }
-    function createDayOfWeekChart(data) { /* ... (same as before) ... */ }
-    function createTopHubsBarChart(data, topN = 15) { /* ... (same as before) ... */ }
-    function createCountryBarChart(data) { /* ... (same as before) ... */ }
-    function createDonutChart(elementId, data, fieldName, valueField = 'noOfTransactions') { /* ... (same as before) ... */ }
-
-    // --- Corrected and refined function implementations ---
     function showMessage(type, message) {
         const div = type === 'error' ? errorMessageDiv : successMessageDiv;
         const otherDiv = type === 'error' ? successMessageDiv : errorMessageDiv;
@@ -320,12 +307,11 @@
             showMessage('error', 'No data available for the selected period or after applying filters.');
             chartsArea.classList.add('hidden');
             findingsSectionDiv.classList.add('hidden');
-            updateSummaryStatistics([]);
+            updateSummaryStatistics([]); // Pass empty array to clear summary
             return;
         }
         chartsArea.classList.remove('hidden');
-        findingsSectionDiv.classList.remove('hidden');
-        if (successMessageDiv.textContent.includes("Data loaded")) { successMessageDiv.classList.add('hidden'); }
+        if (successMessageDiv.textContent.includes("Data loaded from")) { successMessageDiv.classList.add('hidden'); }
         errorMessageDiv.classList.add('hidden');
 
         ['choroplethMap', 'dailyTotalTransactionsChart', 'dailyBuySellChart', 'dailyTopHubsShareChart', 'topHubsChart', 'hubPercentageDonut', 'countryBarChart', 'dayOfWeekChart', 'contractTypeDonut', 'buySellDonut']
@@ -342,20 +328,12 @@
             createDayOfWeekChart(dataToDisplay);
             createDonutChart('contractTypeDonut', dataToDisplay, 'contractType', 'noOfTransactions');
             createDonutChart('buySellDonut', dataToDisplay, 'buySellIndicator', 'noOfTransactions');
-            updateSummaryStatistics(dataToDisplay); // Crucial call
+            updateSummaryStatistics(dataToDisplay);
         } catch (e) {
             console.error("Error during plotting charts:", e);
             showMessage('error', `An error occurred while generating charts: ${e.message}. Check console.`);
         }
     }
-
-    function createChoroplethMap(data) { /* ... (same as previous version with YlOrRd) ... */ }
-    function createDailyTotalTransactionsChart(data) { /* ... (same, no MA) ... */ }
-    function createDailyBuySellChart(data) { /* ... (same) ... */ }
-    function createDayOfWeekChart(data) { /* ... (same) ... */ }
-    function createTopHubsBarChart(data, topN = 15) { /* ... (same) ... */ }
-    function createCountryBarChart(data) { /* ... (same) ... */ }
-    function createDonutChart(elementId, data, fieldName, valueField = 'noOfTransactions') { /* ... (same) ... */ }
 
     function createChoroplethMap(data) {
         const countryTransactions = {};
@@ -382,6 +360,7 @@
         };
         Plotly.newPlot('choroplethMap', mapData, layout, {responsive: true});
     }
+
     function createDailyTotalTransactionsChart(data) {
         const dailyData = {};
         data.forEach(row => { if (row.transactionDateObj) { const dateString = row.transactionDateObj.toISOString().split('T')[0]; dailyData[dateString] = (dailyData[dateString] || 0) + row.noOfTransactions; }});
@@ -390,6 +369,7 @@
         const layout = { xaxis: { title: 'Date', automargin: true, type: 'date' }, yaxis: { title: 'Number of Transactions', automargin: true, rangemode: 'tozero' }, margin: { t: 30, b: 50, l: 70, r:20 }, hovermode: 'x unified'};
         Plotly.newPlot('dailyTotalTransactionsChart', traces, layout, {responsive: true});
     }
+
     function createDailyBuySellChart(data) {
         const dailyBuySell = {};
         data.forEach(row => { if (row.transactionDateObj) { const dateString = row.transactionDateObj.toISOString().split('T')[0]; if (!dailyBuySell[dateString]) dailyBuySell[dateString] = { B: 0, S: 0 }; if (row.buySellIndicator === 'B') dailyBuySell[dateString].B += row.noOfTransactions; else if (row.buySellIndicator === 'S') dailyBuySell[dateString].S += row.noOfTransactions; }});
@@ -399,6 +379,7 @@
         const layout = { barmode: 'stack', xaxis: { title: 'Date', type: 'date', automargin: true }, yaxis: { title: 'Number of Transactions', automargin: true, rangemode: 'tozero' }, margin: { t: 40, b: 50, l: 70, r:20 }, legend: {orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1}};
         Plotly.newPlot('dailyBuySellChart', [buyTrace, sellTrace], layout, {responsive: true});
     }
+
      function createDayOfWeekChart(data) {
         const dayCounts = { "Sunday": 0, "Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0, "Saturday": 0 };
         data.forEach(row => { if (row.dayOfWeek) dayCounts[row.dayOfWeek] += row.noOfTransactions; });
@@ -408,6 +389,7 @@
         const layout = { xaxis: { title: 'Day of the Week', automargin: true, categoryorder: 'array', categoryarray: daysOrder }, yaxis: { title: 'Total Transactions', automargin: true, rangemode: 'tozero' }, margin: { t: 30, b: 50, l: 70, r:20 }};
         Plotly.newPlot('dayOfWeekChart', chartData, layout, {responsive: true});
     }
+
      function createTopHubsBarChart(data, topN = 15) {
         const hubTransactions = {};
         data.forEach(row => { if (row.DPOZ && row.DPOZ !== 'EU') { const hubName = row.dpoz_display_name; hubTransactions[hubName] = (hubTransactions[hubName] || 0) + row.noOfTransactions; }});
@@ -416,6 +398,7 @@
         const layout = { yaxis: { autorange: 'reversed', categoryorder: 'total ascending', automargin: true, tickfont: {size: 10} }, xaxis: { title: 'Total Transactions', rangemode: 'tozero' }, margin: { l: 260, r: 20, t: 30, b: 50 }};
         Plotly.newPlot('topHubsChart', chartData, layout, {responsive: true});
     }
+
     function createCountryBarChart(data) {
         const countryTransactions = {};
         data.forEach(row => { const countryKey = row.country_display_name || "Unknown"; countryTransactions[countryKey] = (countryTransactions[countryKey] || 0) + row.noOfTransactions; });
@@ -424,6 +407,7 @@
         const layout = { xaxis: { title: 'Country/Region', tickangle: -45, automargin: true }, yaxis: { title: 'Total Transactions', rangemode: 'tozero' }, margin: { t: 30, b: 120, l: 70, r:20 }};
         Plotly.newPlot('countryBarChart', chartData, layout, {responsive: true});
     }
+
     function createDonutChart(elementId, data, fieldName, valueField = 'noOfTransactions') {
         const counts = {};
         data.forEach(row => { const key = row[fieldName] || "Unknown"; counts[key] = (counts[key] || 0) + row[valueField]; });
@@ -434,91 +418,52 @@
         Plotly.newPlot(elementId, chartData, layout, {responsive: true});
     }
 
-    // NEW: Hub Percentage Donut Chart
     function createHubPercentageDonut(data, topN = 7) {
         const hubTransactions = {};
-        let totalAllHubTransactions = 0;
-        data.forEach(row => {
-            if (row.DPOZ && row.DPOZ !== 'EU') {
-                 const hubName = row.dpoz_display_name;
-                 hubTransactions[hubName] = (hubTransactions[hubName] || 0) + row.noOfTransactions;
-                 totalAllHubTransactions += row.noOfTransactions;
-            }
-        });
-
+        data.forEach(row => { if (row.DPOZ && row.DPOZ !== 'EU') { const hubName = row.dpoz_display_name; hubTransactions[hubName] = (hubTransactions[hubName] || 0) + row.noOfTransactions; }});
         const sortedHubs = Object.entries(hubTransactions).sort(([,a],[,b]) => b-a);
         const topHubsData = sortedHubs.slice(0, topN);
         const otherHubsTransactions = sortedHubs.slice(topN).reduce((sum, current) => sum + current[1], 0);
-
         const labels = topHubsData.map(entry => entry[0]);
         const values = topHubsData.map(entry => entry[1]);
-
-        if (otherHubsTransactions > 0) {
-            labels.push("Other Hubs");
-            values.push(otherHubsTransactions);
-        }
-
-        const chartData = [{
-            type: 'pie', labels: labels, values: values,
-            hole: .4, textinfo: 'percent+label',
-            pull: labels.map((_, i) => (i < topN && i === 0 ? 0.05 : 0)), // Pull first of top N
-            marker: { colors: ['#007bff', '#6610f2', '#6f42c1', '#e83e8c', '#fd7e14', '#ffc107', '#20c997', '#6c757d'] }
-        }];
-        const layout = {
-            margin: { t: 30, b: 0, l: 30, r: 30 },
-            legend: {orientation: 'h', yanchor: 'bottom', y: -0.2, xanchor: 'center', x: 0.5}
-        };
+        if (otherHubsTransactions > 0 && sortedHubs.length > topN) { labels.push("Other Hubs"); values.push(otherHubsTransactions); }
+        const chartData = [{ type: 'pie', labels: labels, values: values, hole: .4, textinfo: 'percent+label', pull: labels.map((_, i) => (i < topN && i === 0 ? 0.05 : 0)), marker: { colors: ['#007bff', '#6610f2', '#6f42c1', '#e83e8c', '#fd7e14', '#ffc107', '#20c997', '#6c757d'] } }];
+        const layout = { margin: { t: 30, b: 0, l: 30, r: 30 }, legend: {orientation: 'h', yanchor: 'bottom', y: -0.2, xanchor: 'center', x: 0.5}};
         Plotly.newPlot('hubPercentageDonut', chartData, layout, {responsive: true});
     }
 
-    // NEW: Daily Share of Top 3 Hubs
     function createDailyTopHubsShareChart(data) {
-        const dailyData = {}; // { date: {total: X, ttf: Y, the: Z, pvb: W, others: A} }
-        const top3DpozCodes = {
-            ttf: "21YNL----TTF---1",
-            the: "37Y005053MH0000R",
-            pvb: "21Y---A002A005-T"
-        };
+        const dailyData = {};
+        const top3DpozCodes = { ttf: "21YNL----TTF---1", the: "37Y005053MH0000R", pvb: "21Y---A002A005-T" };
+        const top3HubNames = { ttf: getDetail(top3DpozCodes.ttf, dpozDetails), the: getDetail(top3DpozCodes.the, dpozDetails), pvb: getDetail(top3DpozCodes.pvb, dpozDetails) };
 
         data.forEach(row => {
             if (row.transactionDateObj) {
                 const dateString = row.transactionDateObj.toISOString().split('T')[0];
-                if (!dailyData[dateString]) {
-                    dailyData[dateString] = { total: 0, ttf: 0, the: 0, pvb: 0, others: 0 };
-                }
+                if (!dailyData[dateString]) dailyData[dateString] = { total: 0, ttf: 0, the: 0, pvb: 0, others: 0 };
                 dailyData[dateString].total += row.noOfTransactions;
                 if (row.DPOZ === top3DpozCodes.ttf) dailyData[dateString].ttf += row.noOfTransactions;
                 else if (row.DPOZ === top3DpozCodes.the) dailyData[dateString].the += row.noOfTransactions;
                 else if (row.DPOZ === top3DpozCodes.pvb) dailyData[dateString].pvb += row.noOfTransactions;
-                else if (row.DPOZ !== 'EU') dailyData[dateString].others += row.noOfTransactions;
+                else if (row.DPOZ && row.DPOZ !== 'EU') dailyData[dateString].others += row.noOfTransactions; // Ensure DPOZ is not EU
             }
         });
-
         const sortedDates = Object.keys(dailyData).sort((a,b) => new Date(a) - new Date(b));
         const ttfShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].ttf / dailyData[date].total) * 100 : 0);
         const theShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].the / dailyData[date].total) * 100 : 0);
         const pvbShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].pvb / dailyData[date].total) * 100 : 0);
         const othersShare = sortedDates.map(date => dailyData[date].total > 0 ? (dailyData[date].others / dailyData[date].total) * 100 : 0);
-
         const traces = [
-            { x: sortedDates, y: ttfShare, type: 'scatter', mode: 'lines', name: 'Netherlands (TTF) Share', stackgroup: 'one', line: {color: '#007bff'} },
-            { x: sortedDates, y: theShare, type: 'scatter', mode: 'lines', name: 'Germany (THE VTP) Share', stackgroup: 'one', line: {color: '#6f42c1'} },
-            { x: sortedDates, y: pvbShare, type: 'scatter', mode: 'lines', name: 'Spain (PVB) Share', stackgroup: 'one', line: {color: '#fd7e14'} },
+            { x: sortedDates, y: ttfShare, type: 'scatter', mode: 'lines', name: `${top3HubNames.ttf} Share`, stackgroup: 'one', line: {color: '#007bff'} },
+            { x: sortedDates, y: theShare, type: 'scatter', mode: 'lines', name: `${top3HubNames.the} Share`, stackgroup: 'one', line: {color: '#6f42c1'} },
+            { x: sortedDates, y: pvbShare, type: 'scatter', mode: 'lines', name: `${top3HubNames.pvb} Share`, stackgroup: 'one', line: {color: '#fd7e14'} },
             { x: sortedDates, y: othersShare, type: 'scatter', mode: 'lines', name: 'Other Hubs Share', stackgroup: 'one', line: {color: '#6c757d'} }
         ];
-        const layout = {
-            xaxis: { title: 'Date', type: 'date', automargin: true },
-            yaxis: { title: 'Percentage of Daily Transactions (%)', automargin: true, ticksuffix: '%', range: [0, 100] },
-            margin: { t: 40, b: 50, l: 80, r:20 },
-            hovermode: 'x unified',
-            legend: {orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1}
-        };
+        const layout = { xaxis: { title: 'Date', type: 'date', automargin: true }, yaxis: { title: 'Percentage of Daily Transactions (%)', automargin: true, ticksuffix: '%', range: [0, 100] }, margin: { t: 40, b: 50, l: 80, r:20 }, hovermode: 'x unified', legend: {orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'right', x: 1}};
         Plotly.newPlot('dailyTopHubsShareChart', traces, layout, {responsive: true});
     }
 
-
     function updateSummaryStatistics(data) {
-        console.log("updateSummaryStatistics called with data length:", data.length);
         const summaryElements = {
             totalTransactions: document.getElementById('summaryTotalTransactions'),
             uniqueMPs: document.getElementById('summaryUniqueMPs'),
@@ -548,10 +493,10 @@
         };
 
         if (!data || data.length === 0) {
-            console.log("No data for summary, clearing fields.");
-            Object.values(summaryElements).forEach(el => { if(el) el.textContent = '0'; });
+            console.log("updateSummaryStatistics: No data for summary, clearing fields.");
+            Object.values(summaryElements).forEach(el => { if(el) el.textContent = '-'; });
             Object.values(findingsElements).forEach(el => { if(el) el.textContent = 'N/A'; });
-            findingsSectionDiv.classList.add('hidden');
+             findingsSectionDiv.classList.add('hidden');
             return;
         }
         findingsSectionDiv.classList.remove('hidden');
@@ -588,8 +533,6 @@
             if (row.buySellIndicator === 'S') totalSell += row.noOfTransactions;
         });
 
-        console.log("Calculated totalTransactions for summary:", totalTransactions);
-
         summaryElements.totalTransactions.textContent = totalTransactions.toLocaleString();
         summaryElements.uniqueMPs.textContent = marketParticipantsProxies.size.toLocaleString() + " (approx.)";
         summaryElements.buyTransactions.textContent = totalBuy.toLocaleString();
@@ -608,7 +551,6 @@
         const busiestDayEntry = sortedDailyCounts.length > 0 ? sortedDailyCounts[0] : null;
         summaryElements.busiestDay.textContent = busiestDayEntry ? `${busiestDayEntry[0]} (${busiestDayEntry[1].toLocaleString()} trans.)` : '-';
 
-        // Update findings section
         findingsElements.totalTransactions.textContent = totalTransactions.toLocaleString();
         findingsElements.uniqueMPs.textContent = marketParticipantsProxies.size.toLocaleString();
         if (mostActiveHubEntry) {
@@ -646,25 +588,19 @@
         findingsElements.totalSellTransactions.textContent = totalSell.toLocaleString();
     }
 
-
-    function handleDateFilterChange() { /* ... (same as before) ... */ }
-    startDateInput.addEventListener('change', handleDateFilterChange);
-    endDateInput.addEventListener('change', handleDateFilterChange);
-    document.getElementById('csvFileInput').addEventListener('change', function(event) { /* ... (same as before) ... */ });
-
     function handleDateFilterChange() {
         if (fullDataset.length === 0) {
-            showMessage('error', "Please upload a CSV file first.");
+            showMessage('error', "Please load data first by selecting a CSV file.");
             return;
         }
         loader.classList.remove('hidden');
         chartsArea.classList.add('hidden');
-        findingsSectionDiv.classList.add('hidden'); // Also hide findings while loading
+        findingsSectionDiv.classList.add('hidden');
         setTimeout(() => {
             try {
                 const filtered = filterDataByDate(fullDataset, startDateInput.value, endDateInput.value);
                 console.log("Filtered data count for date change:", filtered.length, "Start:", startDateInput.value, "End:", endDateInput.value);
-                plotAllCharts(filtered); // This will handle showing chartsArea and findingsSection
+                plotAllCharts(filtered);
             } catch (e) {
                 console.error("Error in handleDateFilterChange:", e);
                 showMessage('error', `Error applying date filters: ${e.message}`);
@@ -674,54 +610,57 @@
         }, 50);
     }
 
-    document.getElementById('csvFileInput').addEventListener('change', function(event) {
-        const file = event.target.files[0];
-        chartsArea.classList.add('hidden');
-        findingsSectionDiv.classList.add('hidden');
-        [startDateInput, endDateInput].forEach(input => { input.disabled = true; input.value = ''; });
-        showMessage('success', ''); showMessage('error', '');
+    document.addEventListener('DOMContentLoaded', function() {
+        loader.classList.remove('hidden'); // Show loader initially
+        showMessage('success', `Attempting to load data from ${CSV_FILE_PATH}...`);
+        console.log(`Attempting to fetch ${CSV_FILE_PATH}`);
 
-        if (file) {
-            if (file.name.endsWith('.csv')) {
-                loader.classList.remove('hidden');
-                showMessage('success', `Selected file: ${file.name}. Processing...`);
-                console.log("File selected:", file.name);
-
-                Papa.parse(file, {
+        fetch(CSV_FILE_PATH)
+            .then(response => {
+                console.log("Fetch response status:", response.status);
+                if (!response.ok) {
+                    throw new Error(`Network response was not ok: ${response.statusText} (status: ${response.status}). Ensure ${CSV_FILE_PATH} is in the same directory as the HTML file and the server is configured correctly (e.g., for GitHub Pages, the file must be committed and deployed).`);
+                }
+                return response.text();
+            })
+            .then(csvText => {
+                console.log("CSV text fetched, length:", csvText.length);
+                Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
                     dynamicTyping: false,
                     complete: function(results) {
                         console.log("PapaParse complete. Errors:", results.errors.length, "Raw data rows from CSV:", results.data.length);
-                        loader.classList.add('hidden');
-
                         if (results.errors.length > 0) {
-                            let errorMsg = 'Error parsing CSV data. ';
+                            let errorMsg = 'Error parsing CSV data from NGTData.csv. ';
                             results.errors.slice(0,3).forEach(err => errorMsg += `Row ${err.row || 'unknown'}: ${err.message}. `);
                             if(results.errors.length > 3) errorMsg += ` And ${results.errors.length - 3} more errors.`;
                             showMessage('error', errorMsg + 'Please ensure correct CSV format and headers.');
                             console.error("CSV Parsing Errors:", results.errors);
+                            loader.classList.add('hidden');
                             return;
                         }
                         if (!results.data || results.data.length === 0) {
-                            showMessage('error', 'CSV file is empty or contains no data rows.'); return;
+                            showMessage('error', 'NGTData.csv is empty or contains no data rows.');
+                            loader.classList.add('hidden'); return;
                         }
                         const essentialColumns = ['country', 'noOfTransactions', 'noOfMPs', 'DPOZ', 'contractType', 'buySellIndicator', 'transactionDate'];
                         const headers = results.meta && results.meta.fields ? results.meta.fields : (results.data.length > 0 ? Object.keys(results.data[0]) : []);
 
                         if (!headers || headers.length === 0) {
-                             showMessage('error', 'Could not determine headers from CSV file.'); return;
+                             showMessage('error', 'Could not determine headers from NGTData.csv.'); loader.classList.add('hidden'); return;
                         }
                         const missingColumns = essentialColumns.filter(col => !headers.includes(col));
                         if (missingColumns.length > 0) {
-                            showMessage('error', `Missing essential columns in CSV: ${missingColumns.join(', ')}. Please check your file.`); return;
+                            showMessage('error', `Missing essential columns in NGTData.csv: ${missingColumns.join(', ')}. Please check your file.`); loader.classList.add('hidden'); return;
                         }
 
                         fullDataset = results.data.map(cleanDataRow).filter(row => row.transactionDateObj && !isNaN(row.transactionDateObj.getTime()));
                         console.log("Cleaned dataset size (with valid dates):", fullDataset.length);
 
                         if (fullDataset.length === 0) {
-                            showMessage('error', 'No valid data with parseable transaction dates found. Check date format (e.g., YYYYYMMMDD) and data integrity.'); return;
+                            showMessage('error', 'No valid data with parseable transaction dates found in NGTData.csv. Check date format (e.g., YYYYYMMMDD) and data integrity.');
+                            loader.classList.add('hidden'); return;
                         }
 
                         const dates = fullDataset.map(row => row.transactionDateObj);
@@ -736,24 +675,28 @@
                             endDateInput.min = minDateStr; endDateInput.max = maxDateStr; endDateInput.value = maxDateStr;
                             startDateInput.disabled = false; endDateInput.disabled = false;
                         } else {
-                             showMessage('error', 'Could not determine a valid date range from the data.');
-                             startDateInput.disabled = true; endDateInput.disabled = true; return;
+                             showMessage('error', 'Could not determine a valid date range from the data in NGTData.csv.');
+                             startDateInput.disabled = true; endDateInput.disabled = true; loader.classList.add('hidden'); return;
                         }
-                        plotAllCharts(fullDataset); // Initial plot
-                        showMessage('success', `Data loaded from ${file.name}. Charts generated for the full date range.`);
-                    },
-                    error: function(error, file) {
+                        plotAllCharts(fullDataset);
+                        showMessage('success', `Data loaded from NGTData.csv. Charts generated for the full date range.`);
                         loader.classList.add('hidden');
-                        console.error("Papa Parse Error on file:", file ? file.name : 'unknown file', error);
-                        showMessage('error', `Error parsing CSV file "${file ? file.name : ''}": ${error.message}`);
+                    },
+                    error: function(error, file) { // file argument might not be available with fetch
+                        loader.classList.add('hidden');
+                        console.error("Papa Parse Error:", error);
+                        showMessage('error', `Error parsing NGTData.csv: ${error.message}`);
                     }
                 });
-            } else {
-                showMessage('error', 'Please select a .csv file.');
-                chartsArea.classList.add('hidden'); findingsSectionDiv.classList.add('hidden');
-                startDateInput.disabled = true; endDateInput.disabled = true;
-            }
-        }
+            })
+            .catch(error => {
+                loader.classList.add('hidden');
+                console.error('Error fetching or processing CSV:', error);
+                showMessage('error', `Error loading data from ${CSV_FILE_PATH}: ${error.message}.`);
+            });
+
+        startDateInput.addEventListener('change', handleDateFilterChange);
+        endDateInput.addEventListener('change', handleDateFilterChange);
     });
 </script>
 
